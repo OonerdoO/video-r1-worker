@@ -11,21 +11,31 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     git \
+    git-lfs \
     && rm -rf /var/lib/apt/lists/*
 
-# Installer vLLM dernière version (supporte Qwen2.5-VL)
+# Installer les dépendances Python de base
 RUN pip install --no-cache-dir \
-    vllm>=0.6.0 \
-    transformers>=4.45.0 \
-    huggingface-hub>=0.25.0 \
-    accelerate \
-    qwen-vl-utils \
     runpod \
     Pillow \
     opencv-python-headless \
     numpy \
-    decord \
-    av
+    wandb==0.18.3 \
+    tensorboardx \
+    torchvision
+
+# Installer qwen_vl_utils avec support decord
+RUN pip install --no-cache-dir qwen_vl_utils[decord]
+
+# Installer flash-attn
+RUN pip install --no-cache-dir flash-attn --no-build-isolation
+
+# Installer vLLM 0.7.2 (version officielle Video-R1)
+RUN pip install --no-cache-dir vllm==0.7.2
+
+# Installer la version spécifique de transformers compatible avec Video-R1
+# Cette version est nécessaire car Qwen2.5-VL change fréquemment
+RUN pip install --no-cache-dir git+https://github.com/huggingface/transformers.git@336dc69d63d56f232a183a3e7f52790429b871ef
 
 # Créer le répertoire de travail
 WORKDIR /app
