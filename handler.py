@@ -1,54 +1,44 @@
 """
 RunPod Serverless Handler pour Video-R1-7B
 
-Ce handler reçoit des frames vidéo et une question, et retourne l'analyse.
+Ce handler utilise Transformers directement pour une meilleure compatibilité.
 """
 
 import runpod
 import base64
 import os
 import tempfile
-
+import torch
 
 # Variables globales pour le modèle (chargé une seule fois)
-llm = None
+model = None
 processor = None
-tokenizer = None
-sampling_params = None
 
 
 def load_model():
-    """Charge le modèle Video-R1-7B avec vLLM"""
-    global llm, processor, tokenizer, sampling_params
+    """Charge le modèle Video-R1-7B avec Transformers"""
+    global model, processor
 
-    if llm is not None:
+    if model is not None:
         return  # Déjà chargé
 
-    from vllm import LLM, SamplingParams
-    from transformers import AutoProcessor, AutoTokenizer
+    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
 
     model_path = os.environ.get("MODEL_NAME", "Video-R1/Video-R1-7B")
     
     print(f"Loading model: {model_path}")
 
-    llm = LLM(
-        model=model_path,
-        tensor_parallel_size=1,
-        max_model_len=32768,
-        gpu_memory_utilization=0.85,
-        limit_mm_per_prompt={"video": 1, "image": 1},
+    # Charger le modèle avec Transformers (plus stable que vLLM pour ce modèle)
+    model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
+        model_path,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
         trust_remote_code=True,
     )
-
-    processor = AutoProcessor.from_pretrained(model_path, trust_remote_code=True)
-    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-    tokenizer.padding_side = "left"
-    processor.tokenizer = tokenizer
-
-    sampling_params = SamplingParams(
-        temperature=0.1,
-        top_p=0.001,
-        max_tokens=1024,
+    
+    processor = AutoProcessor.from_pretrained(
+        model_path,
+        trust_remote_code=True,
     )
 
     print("Model loaded successfully!")
@@ -108,7 +98,7 @@ def handler(job):
         frames_pil = []
         for frame_b64 in video_frames[:max_frames]:
             img_data = base64.b64decode(frame_b64)
-            img = Image.open(BytesIO(img_data))
+            img = Image.open(BytesIO(img_data)).convert("RGB")
             frames_pil.append(img)
 
         # Créer un fichier vidéo temporaire
@@ -123,13 +113,8 @@ def handler(job):
 
             for frame in frames_pil:
                 frame_np = np.array(frame)
-                if len(frame_np.shape) == 2:
-                    frame_np = cv2.cvtColor(frame_np, cv2.COLOR_GRAY2BGR)
-                elif frame_np.shape[2] == 4:
-                    frame_np = cv2.cvtColor(frame_np, cv2.COLOR_RGBA2BGR)
-                elif frame_np.shape[2] == 3:
-                    frame_np = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
-                out.write(frame_np)
+                frame_bgr = cv2.cvtColor(frame_np, cv2.COLOR_RGB2BGR)
+                out.write(frame_bgr)
             out.release()
 
         # Construire le message multimodal
@@ -140,7 +125,7 @@ def handler(job):
                     {
                         "type": "video",
                         "video": tmp_path,
-                        "max_pixels": 200704,
+                        "max_pixels": 360 * 420,
                         "nframes": max_frames,
                     },
                     {
@@ -152,28 +137,42 @@ def handler(job):
             }
         ]
 
-        # Traiter avec le processor
-        prompt = processor.apply_chat_template(
+        # Préparer les inputs avec le processor
+        text = processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-
-        # Traiter les entrées vidéo
-        image_inputs, video_inputs, video_kwargs = process_vision_info(
-            messages, return_video_kwargs=True
+        
+        image_inputs, video_inputs = process_vision_info(messages)
+        
+        inputs = processor(
+            text=[text],
+            images=image_inputs,
+            videos=video_inputs,
+            padding=True,
+            return_tensors="pt",
         )
+        inputs = inputs.to(model.device)
 
-        # Préparer l'entrée vLLM
-        llm_inputs = [
-            {
-                "prompt": prompt,
-                "multi_modal_data": {"video": video_inputs[0]},
-                "mm_processor_kwargs": {key: val[0] for key, val in video_kwargs.items()},
-            }
+        # Générer la réponse
+        with torch.no_grad():
+            generated_ids = model.generate(
+                **inputs,
+                max_new_tokens=1024,
+                do_sample=True,
+                temperature=0.1,
+                top_p=0.001,
+            )
+        
+        # Décoder la réponse
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] 
+            for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
         ]
-
-        # Exécuter l'inférence
-        outputs = llm.generate(llm_inputs, sampling_params=sampling_params)
-        output_text = outputs[0].outputs[0].text
+        output_text = processor.batch_decode(
+            generated_ids_trimmed,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )[0]
 
         # Parser la réponse
         thinking = ""
@@ -198,7 +197,11 @@ def handler(job):
         }
 
     except Exception as e:
-        return {"error": str(e)}
+        import traceback
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
 
 
 # Point d'entrée RunPod
