@@ -155,10 +155,18 @@ def handler(job):
         image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
 
         # Préparer l'input vLLM (comme le code officiel)
+        # Note: video_kwargs peut contenir des booléens, on ne garde que les listes
+        mm_processor_kwargs = {}
+        for key, val in video_kwargs.items():
+            if isinstance(val, list) and len(val) > 0:
+                mm_processor_kwargs[key] = val[0]
+            elif not isinstance(val, bool):
+                mm_processor_kwargs[key] = val
+        
         llm_inputs = [{
             "prompt": prompt,
             "multi_modal_data": {"video": video_inputs[0]},
-            "mm_processor_kwargs": {key: val[0] for key, val in video_kwargs.items()},
+            "mm_processor_kwargs": mm_processor_kwargs,
         }]
 
         print("Running inference...")
