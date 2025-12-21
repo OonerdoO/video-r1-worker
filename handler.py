@@ -82,7 +82,11 @@ def handler(job):
         video_frames = job_input.get("video_frames", [])
         question = job_input.get("question", "Describe what happens in this video.")
         problem_type = job_input.get("problem_type", "free-form")
-        max_frames = min(job_input.get("max_frames", 128), 128)  # Limite à 128 frames max
+        max_frames = job_input.get("max_frames", 32)  # Défaut: 32 frames, pas de limite
+        # Résolution contrôlée par le client (defaut: 560x560 = 313600 pixels)
+        max_pixels = job_input.get("max_pixels", 313600)
+
+        print(f"Config: max_frames={max_frames}, max_pixels={max_pixels}")
 
         if not video_frames:
             return {"error": "No video frames provided"}
@@ -137,7 +141,7 @@ def handler(job):
                     {
                         "type": "video",
                         "video": tmp_path,
-                        "max_pixels": 313600,  # Augmenté pour meilleure vision (560x560)
+                        "max_pixels": max_pixels,  # Résolution contrôlée par le client
                         "nframes": max_frames
                     },
                     {
