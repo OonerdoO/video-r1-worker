@@ -142,7 +142,7 @@ def handler(job):
                         "type": "video",
                         "video": tmp_path,
                         "max_pixels": max_pixels,  # Résolution contrôlée par le client
-                        "nframes": max_frames
+                        "nframes": len(frames_pil)  # Nombre réel de frames dans la vidéo temp
                     },
                     {
                         "type": "text",
