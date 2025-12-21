@@ -137,7 +137,7 @@ def handler(job):
                     {
                         "type": "video",
                         "video": tmp_path,
-                        "max_pixels": 200704,  # Comme le code officiel
+                        "max_pixels": 313600,  # Augmenté pour meilleure vision (560x560)
                         "nframes": max_frames
                     },
                     {
