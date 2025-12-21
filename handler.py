@@ -82,7 +82,7 @@ def handler(job):
         video_frames = job_input.get("video_frames", [])
         question = job_input.get("question", "Describe what happens in this video.")
         problem_type = job_input.get("problem_type", "free-form")
-        max_frames = min(job_input.get("max_frames", 32), 32)
+        max_frames = min(job_input.get("max_frames", 128), 128)  # Limite à 128 frames max
 
         if not video_frames:
             return {"error": "No video frames provided"}
