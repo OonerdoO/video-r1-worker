@@ -22,7 +22,7 @@ def load_model():
     if model is not None:
         return  # Déjà chargé
 
-    from transformers import Qwen2_5_VLForConditionalGeneration, AutoProcessor
+    from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2VLProcessor
 
     model_path = os.environ.get("MODEL_NAME", "Video-R1/Video-R1-7B")
     
@@ -36,7 +36,8 @@ def load_model():
         trust_remote_code=True,
     )
     
-    processor = AutoProcessor.from_pretrained(
+    # Utiliser Qwen2VLProcessor explicitement (AutoProcessor ne fonctionne pas avec Video-R1)
+    processor = Qwen2VLProcessor.from_pretrained(
         model_path,
         trust_remote_code=True,
     )
